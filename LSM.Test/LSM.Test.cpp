@@ -1,7 +1,7 @@
 // LSM.Test.cpp : Defines the entry point for the console application.
 //
 
-#include "stdafx.h"
+//#include "stdafx.h"
 #include "lsm.h"
 
 #include <Windows.h>
@@ -105,16 +105,49 @@ void readerThread(lsm_db *db, int id) {
   }
 }
 
+void deleterAll(lsm_db *db)
+{
+    lsm_cursor *csr;
+    if (lsm_csr_open(db, &csr) != LSM_OK) {
+        return;
+    }
+    string firstKey;
+    string lastKey;
+    char *pFirstKey, *pLastKey;
+    int nFirstKey, nLastKey;
+    lsm_csr_first(csr);
+    int validrc = lsm_csr_valid(csr);
+    if (!validrc) {
+        lsm_csr_close(csr);
+        return;
+    }
+    lsm_csr_key(csr, (const void **)&pFirstKey, &nFirstKey);
+    firstKey.assign(pFirstKey, nFirstKey);
+    printf("delete key: %s\n", firstKey.c_str());
+    lsm_csr_last(csr);
+    lsm_csr_key(csr, (const void **)&pLastKey, &nLastKey);
+    lastKey.assign(pLastKey, nLastKey);
+    printf("delete key: %s\n", lastKey.c_str());
+    lsm_csr_close(csr);
+    int rv = lsm_delete_range(db, firstKey.c_str(), nFirstKey, lastKey.c_str(), nLastKey);
+    if (rv != LSM_OK) {
+        printf("error: %d\n", rv);
+    }
+    lsm_delete(db, firstKey.c_str(), nFirstKey);
+    lsm_delete(db, lastKey.c_str(), nLastKey);
+}
+
 int main()
 {
   int rc;
   lsm_db *db, *db2;
-
+  int nCkpt = 4 * 1024;             /* 4096KB == 4MB */
   /* Allocate a new database handle */
   rc = lsm_new(0, &db);
   if (rc != LSM_OK) {
     exit(1);
   }
+  lsm_config(db, LSM_CONFIG_AUTOCHECKPOINT, &nCkpt);
 
   /* Connect the database handle to database "test.db" */
   rc = lsm_open(db, "test.lsmdb");
@@ -143,8 +176,16 @@ int main()
   t1.join();
   t2.join();
 
-  rc = lsm_close(db);
+  deleterAll(db);
+
+  deleterAll(db);
+
+  rc = lsm_work(db, 1, -1, 0);
+
+  ::Sleep(5000);
+
   rc = lsm_close(db2);
+  rc = lsm_close(db);
   return 0;
 }
 
